@@ -25,7 +25,7 @@ for (int i = 0; i < zArray.Length; i++)
     }
 }
 
-if(checkFind)
+if(!checkFind)
 {
     Console.WriteLine(wbsBytesToString + " not found");
 }
