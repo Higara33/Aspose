@@ -4,24 +4,66 @@
     {
         static void Main(string[] args)
         {
-            string filePath = "test.mpp";
-            string wbsCode = "1.2.3";
-
-            byte[] bytesToFind = GetBytesFromWbsCode(wbsCode);
-            List<long> positions = FindAllBytesInFile(filePath, bytesToFind);
-
-            if (positions.Count > 0)
+            if (args.Length < 2)
             {
-                Console.WriteLine($"WBS Code {wbsCode} found at positions:");
-
-                foreach (long position in positions)
-                {
-                    Console.WriteLine($"- {position:X}");
-                }
+                Console.WriteLine("Usage: WbsHexDump.exe <mpp file> <wbs code>");
+                return;
             }
-            else
+
+            string mppFile = args[0];
+            string wbsCode = args[1];
+
+            byte[] block = FindDataBlockByWbsCode(mppFile, wbsCode);
+
+            if (block == null)
             {
-                Console.WriteLine($"WBS Code {wbsCode} not found in file");
+                Console.WriteLine($"Data block for WBS code {wbsCode} not found in {mppFile}");
+                return;
+            }
+
+            Console.WriteLine($"Data block for WBS code {wbsCode}:");
+
+            for (int i = 0; i < block.Length; i++)
+            {
+                Console.Write($"{block[i]:X2} ");
+                if ((i + 1) % 16 == 0) Console.WriteLine();
+            }
+        }
+
+        static byte[] FindDataBlockByWbsCode(string mppFile, string wbsCode)
+        {
+            FileStream stream = null;
+
+            try
+            {
+                stream = new FileStream(mppFile, FileMode.Open, FileAccess.Read);
+
+                // Look for the WBS code in the file
+                byte[] wbsBytes = GetBytesFromWbsCode(wbsCode);
+                long position = FindBytesInStream(stream, wbsBytes);
+
+                if (position == -1)
+                {
+                    return null;
+                }
+
+                // Skip the WBS code and the 4-byte block size
+                stream.Seek(wbsBytes.Length + 4, SeekOrigin.Current);
+
+                // Read the block size
+                byte[] sizeBytes = new byte[4];
+                stream.Read(sizeBytes, 0, 4);
+                int blockSize = BitConverter.ToInt32(sizeBytes, 0);
+
+                // Read the data block
+                byte[] block = new byte[blockSize];
+                stream.Read(block, 0, blockSize);
+
+                return block;
+            }
+            finally
+            {
+                if (stream != null) stream.Close();
             }
         }
 
@@ -32,48 +74,31 @@
 
             for (int i = 0; i < codeParts.Length; i++)
             {
-                bytes[i] = Convert.ToByte(codeParts[i]);
+                bytes[i] = Convert.ToByte(codeParts[i], 16);
             }
 
             return bytes;
         }
 
-        static List<long> FindAllBytesInFile(string filePath, byte[] bytes)
+        static long FindBytesInStream(Stream stream, byte[] bytes)
         {
-            FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-            long position = 0;
-            int matches = 0;
-            List<long> positions = new List<long>();
+            int b;
+            long i = 0;
 
-            while (true)
+            while ((b = stream.ReadByte()) != -1)
             {
-                int nextByte = stream.ReadByte();
-
-                if (nextByte == -1)
+                if (b == bytes[i])
                 {
-                    break;
-                }
-
-                if (nextByte == bytes[position])
-                {
-                    position++;
-
-                    if (position == bytes.Length)
-                    {
-                        position = 0;
-                        matches++;
-                        positions.Add(stream.Position - bytes.Length);
-                    }
+                    i++;
+                    if (i == bytes.Length) return stream.Position - i;
                 }
                 else
                 {
-                    position = 0;
+                    i = 0;
                 }
             }
 
-            stream.Close();
-
-            return positions;
+            return -1;
         }
     }
 }
